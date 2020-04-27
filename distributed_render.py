@@ -51,7 +51,8 @@ def is_complete(config):
 def run_batch_render(config):
   """Call blender and generate a batch of samples."""
   d = config['dataset_type']
-  cmd = ['blender', '--background', '--python', 'render.py']
+  # cmd = ['blender', '--background', '--python', 'render.py']
+  cmd = ['python', 'render.py']
   config_file = 'render_multi' if flags.is_multi else 'render_single'
   cmd += ['--', '-r', '-d', flags.dataset_name + '_' + d, '-g', config_file, '-p']
   for k in config:
@@ -84,18 +85,18 @@ def main():
   parser.add_argument('--num_classes', type=int, default=10)
   flags = parser.parse_args()
 
-  if not flags.is_multi:
-    """
-    A bit of a side-effect of how this code is put together requires that this
-    holds in order to guarantee an equal number of samples per class are rendered
-    and that the proper train/val/test split of models is guaranteed. (only
-    applies to single-object setting)
-    """
-    num_batch, num_ref = flags.num_samples // flags.batch_size, flags.num_classes * 12
-    assert num_batch % num_ref == 0, (
-      'Number of batches should be multiple of (number of buckets (12) * number of classes): '
-      f'(num batches: {num_batch}, num_buckets * num_classes: {num_ref})'
-    )
+  # if not flags.is_multi:
+  #   """
+  #   A bit of a side-effect of how this code is put together requires that this
+  #   holds in order to guarantee an equal number of samples per class are rendered
+  #   and that the proper train/val/test split of models is guaranteed. (only
+  #   applies to single-object setting)
+  #   """
+  #   num_batch, num_ref = flags.num_samples // flags.batch_size, flags.num_classes * 12
+  #   assert num_batch % num_ref == 0, (
+  #     'Number of batches should be multiple of (number of buckets (12) * number of classes): '
+  #     f'(num batches: {num_batch}, num_buckets * num_classes: {num_ref})'
+  #   )
 
   dataset_choices = [
     '0-0-0-0', '1-0-0-0', '0-1-0-0', '0-0-1-0',
@@ -108,10 +109,11 @@ def main():
 
   # Set up ray config
   ray_config = {
-    'dataset_type': tune.grid_search(dataset_choices),
+    'dataset_type': '1-1-1-1',
     'object.total_num_samples': flags.num_samples,
     'batch.num_samples': flags.batch_size,
     'batch.idx_offset': tune.grid_search(offsets),
+    'rendering.resolution': 32,
   }
 
   if not flags.is_multi:
@@ -121,7 +123,7 @@ def main():
   exp_args = {
     'verbose': True,
     'resume': False,
-    'resources_per_trial': {'cpu': 2},
+    'resources_per_trial': {'cpu': 1},
     'config': ray_config
   }
 
@@ -132,8 +134,11 @@ def main():
   ray.init(local_mode=flags.local_mode,
            redis_address=flags.redis_address)
 
+  import timeit
+  start = timeit.default_timer()
   trials = tune.run(run_batch_render, **exp_args)
-
+  end = timeit.default_timer()
+  print(f'samples: {flags.num_samples}, time: {end - start}')
 
 if __name__ == '__main__':
   main()
